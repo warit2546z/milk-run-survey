@@ -20,7 +20,7 @@ if uploaded_file is not None:
             df = pd.read_excel(uploaded_file)
             
         # ตรวจสอบว่าในไฟล์มีคอลัมน์ที่จำเป็นสำหรับทำแผนที่หรือไม่
-        if 'ชื่อสถานที่' in df.columns and 'ละติจูด' in df.columns and 'ลองจิจูด' in df.columns:
+        if 'ชื่อสถานที่' in df.columns and 'Lat' in df.columns and 'Lon' in df.columns:
             
             # 1. แสดงตารางข้อมูล
             st.subheader("📋 ตารางแสดงข้อมูลค่าต่างๆ")
@@ -30,8 +30,8 @@ if uploaded_file is not None:
             st.subheader("📍 แผนที่แสดงจุดสำรวจ")
             
             # คำนวณหาจุดกึ่งกลางของแผนที่จากพิกัดทั้งหมด
-            center_lat = df['ละติจูด'].mean()
-            center_lon = df['ลองจิจูด'].mean()
+            center_lat = df['Lat'].mean()
+            center_lon = df['Lon'].mean()
             m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
 
             # วนลูปเพื่อนำพิกัดและข้อมูลมาปักหมุด
@@ -40,12 +40,12 @@ if uploaded_file is not None:
                 # สร้างข้อความ Popup โดยดึงข้อมูลทุกคอลัมน์ที่ไม่ได้ชื่อว่าพิกัดมาแสดงอัตโนมัติ
                 popup_html = f"<h4 style='margin-bottom:5px;'>{row['ชื่อสถานที่']}</h4><hr style='margin:5px 0'>"
                 for col in df.columns:
-                    if col not in ['ชื่อสถานที่', 'ละติจูด', 'ลองจิจูด']:
+                    if col not in ['ชื่อสถานที่', 'Lat', 'Lon']:
                         popup_html += f"<b>{col}:</b> {row[col]}<br>"
                 
                 # ปักหมุดลงบนแผนที่
                 folium.Marker(
-                    location=[row['ละติจูด'], row['ลองจิจูด']],
+                    location=[row['Lat'], row['Lon']],
                     popup=folium.Popup(popup_html, max_width=300),
                     tooltip=str(row['ชื่อสถานที่']), 
                     icon=folium.Icon(color="blue", icon="info-sign")
@@ -55,7 +55,7 @@ if uploaded_file is not None:
             st_folium(m, width=1000, height=600)
             
         else:
-            st.error("❌ ข้อผิดพลาด: ไฟล์ของคุณต้องมีหัวคอลัมน์ชื่อ 'ชื่อสถานที่', 'ละติจูด' และ 'ลองจิจูด' (พิมพ์ให้ตรงกันเป๊ะๆ)")
+            st.error("❌ ข้อผิดพลาด: ไฟล์ของคุณต้องมีหัวคอลัมน์ชื่อ 'ชื่อสถานที่', 'Lat' และ 'Lon' (ตัวพิมพ์เล็ก-ใหญ่ต้องตรงกัน)")
             
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
@@ -63,4 +63,4 @@ if uploaded_file is not None:
 else:
     # ข้อความแสดงเมื่อยังไม่มีการอัปโหลดไฟล์
     st.info("👆 กรุณาอัปโหลดไฟล์ข้อมูลของคุณด้านบน เพื่อเริ่มต้นการแสดงผล")
-    st.write("**เงื่อนไขของไฟล์ที่นำมาอัปโหลด:** ต้องมีหัวคอลัมน์ (บรรทัดแรกสุด) ที่ใช้คำว่า **ชื่อสถานที่**, **ละติจูด** และ **ลองจิจูด** ส่วนคอลัมน์ข้อมูลอื่นๆ ระบบจะนำไปแสดงผลให้อัตโนมัติ")
+    st.write("**เงื่อนไขของไฟล์ที่นำมาอัปโหลด:** ต้องมีหัวคอลัมน์ (บรรทัดแรกสุด) ที่ใช้คำว่า **ชื่อสถานที่**, **Lat** และ **Lon** ส่วนข้อมูลอื่นๆ เช่น 200cc, 2L, เริ่มรับได้ ฯลฯ ระบบจะนำไปแสดงในหน้าต่างแผนที่ให้อัตโนมัติ")
