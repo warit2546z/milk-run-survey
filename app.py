@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import math
 import datetime
 
-# --- ฟังก์ชันคำนวณระยะทางระหว่าง 2 พิกัด (กิโลเมตร) ---
+# --- ฟังก์ชันคำนวณระยะทางแบบเส้นตรง (กรณีไม่มีข้อมูลจริง) ---
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371.0 
     lat1_rad, lon1_rad = math.radians(lat1), math.radians(lon1)
@@ -21,7 +21,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 st.set_page_config(page_title="Logistics Route & ETA Dashboard", layout="wide")
 st.title("🗺️ ระบบจัดการเส้นทางและตารางเวลาจัดส่ง")
 
-# แบ่งหน้าจออัปโหลดไฟล์
 col1, col2 = st.columns(2)
 with col1:
     uploaded_file = st.file_uploader("1️⃣ อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
@@ -40,7 +39,7 @@ if uploaded_file is not None:
             st.subheader("📝 ตารางข้อมูลจัดส่ง (สามารถคลิกแก้ไขได้)")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            # --- ตั้งค่าตัวแปรสำหรับการคำนวณ ---
+            # --- ตั้งค่าพารามิเตอร์ ---
             st.markdown("---")
             with st.expander("⚙️ ตั้งค่าพารามิเตอร์รถขนส่ง (เวลา, น้ำมัน, CO2)", expanded=True):
                 st.write("**ตั้งค่าเวลาเดินทาง**")
@@ -50,7 +49,8 @@ if uploaded_file is not None:
                 with t_col2:
                     avg_speed = st.number_input("ความเร็วเฉลี่ยรถ (กม./ชม.)", min_value=1.0, value=40.0, step=5.0)
                 with t_col3:
-                    service_time = st.number_input("เวลาลงของแต่ละจุด (นาที)", min_value=0, value=10, step=5)
+                    # ปรับค่า Default เป็น 1 นาทีตามที่ต้องการ
+                    service_time = st.number_input("เวลาลงของแต่ละจุด (นาที)", min_value=0, value=1, step=1)
                 
                 st.write("**ตั้งค่าต้นทุนและสิ่งแวดล้อม**")
                 c_col1, c_col2, c_col3, c_col4 = st.columns(4)
@@ -59,15 +59,19 @@ if uploaded_file is not None:
                 with c_col2:
                     fuel_price = st.number_input("ราคาน้ำมัน (บาท/ลิตร)", value=32.50)
                 with c_col3:
-                    co2_rate = st.number_input("ปล่อย CO2 (kg/ลิตร)", value=2.68, help="ดีเซลปกติประมาณ 2.68 kg/ลิตร")
+                    co2_rate = st.number_input("ปล่อย CO2 (kg/ลิตร)", value=2.68)
                 with c_col4:
-                    baseline_dist = st.number_input("ระยะทางเดิมก่อนปรับปรุง (กม.)", value=0.0, help="ใส่เพื่อเปรียบเทียบผลลัพธ์")
+                    baseline_dist = st.number_input("ระยะทางเดิมก่อนปรับปรุง (กม.)", value=0.0)
 
-            # --- เริ่มคำนวณเวลาและระยะทาง ---
+            # --- เริ่มคำนวณ ---
             current_datetime = datetime.datetime.combine(datetime.date.today(), start_time)
             schedule_data = []
             total_distance = 0.0
             total_travel_mins = 0.0
+            
+            # เช็คว่ามีคอลัมน์ระยะทางจริงจากตาราง Excel หรือไม่
+            col_real_dist = 'ระยะห่างระหว่างแต่ละจุด (กม.)'
+            has_real_dist = col_real_dist in edited_df.columns
 
             for i in range(len(edited_df)):
                 row = edited_df.iloc[i]
@@ -75,21 +79,30 @@ if uploaded_file is not None:
                     dist = 0.0
                     travel_mins = 0
                 else:
-                    prev_row = edited_df.iloc[i-1]
-                    dist = calculate_distance(prev_row['Lat'], prev_row['Lon'], row['Lat'], row['Lon'])
+                    # ถ้าระบุระยะทางจริงใน Excel มา ให้ใช้ค่านั้นเลย
+                    if has_real_dist:
+                        try:
+                            dist = float(row[col_real_dist])
+                        except:
+                            dist = 0.0 # กรณีเป็นเครื่องหมาย - หรือข้อมูลว่าง
+                    else:
+                        # ถ้าไม่มี ให้คำนวณแบบเส้นตรง
+                        prev_row = edited_df.iloc[i-1]
+                        dist = calculate_distance(prev_row['Lat'], prev_row['Lon'], row['Lat'], row['Lon'])
+                    
                     travel_mins = (dist / avg_speed) * 60
                 
                 total_distance += dist
                 total_travel_mins += travel_mins
                 
                 current_datetime += datetime.timedelta(minutes=travel_mins)
-                arrival_time = current_datetime.strftime("%H:%M")
+                arrival_time = current_datetime.strftime("%H:%M:%S")
                 
                 current_datetime += datetime.timedelta(minutes=service_time)
-                departure_time = current_datetime.strftime("%H:%M")
+                departure_time = current_datetime.strftime("%H:%M:%S")
                 
                 schedule_data.append({
-                    "ลำดับ": i + 1,
+                    "ลำดับ": i, # ปรับให้เริ่มที่ 0 เหมือนในไฟล์ของคุณ
                     "ชื่อสถานที่": row['ชื่อสถานที่'],
                     "ระยะห่าง (กม.)": f"{dist:.2f}",
                     "เวลาไปถึง (ETA)": arrival_time,
@@ -97,15 +110,22 @@ if uploaded_file is not None:
                 })
             
             # --- คำนวณผลลัพธ์รวม (Dashboard) ---
-            total_time_mins = total_travel_mins + (len(edited_df) * service_time)
+            total_service_mins = len(edited_df) * service_time
+            total_time_mins = total_travel_mins + total_service_mins
+            
             hours = int(total_time_mins // 60)
             mins = int(total_time_mins % 60)
+            
+            drive_hours = int(total_travel_mins // 60)
+            drive_mins = int(total_travel_mins % 60)
+            
+            service_hours = int(total_service_mins // 60)
+            service_mins = int(total_service_mins % 60)
             
             fuel_used = total_distance / fuel_rate if fuel_rate > 0 else 0
             total_cost = fuel_used * fuel_price
             total_co2 = fuel_used * co2_rate
 
-            # การหาค่าผลต่าง (Delta) ถ้ามีการใส่ระยะทางดั้งเดิมมา
             delta_dist, delta_cost, delta_co2, delta_time_str = None, None, None, None
             if baseline_dist > 0:
                 delta_dist = total_distance - baseline_dist
@@ -113,15 +133,19 @@ if uploaded_file is not None:
                 delta_cost = total_cost - (baseline_fuel * fuel_price)
                 delta_co2 = total_co2 - (baseline_fuel * co2_rate)
                 
-                baseline_time_mins = (baseline_dist / avg_speed) * 60 + (len(edited_df) * service_time)
+                baseline_time_mins = (baseline_dist / avg_speed) * 60 + total_service_mins
                 delta_time_mins = total_time_mins - baseline_time_mins
                 delta_time_str = f"{int(delta_time_mins)} นาที"
 
-            # --- แสดงส่วน Dashboard แบบที่ต้องการ ---
+            # --- Dashboard ---
             st.markdown("---")
             st.subheader("📊 การวิเคราะห์ผลลัพธ์รวม")
             
-            # ใช้ st.metric เพื่อแสดงตัวเลขใหญ่ๆ และลูกศร
+            if has_real_dist:
+                st.success("✅ ระบบกำลังใช้ข้อมูล 'ระยะห่างระหว่างแต่ละจุด (กม.)' จากไฟล์ Excel ของคุณ (แม่นยำที่สุด)")
+            else:
+                st.warning("⚠️ ไม่พบคอลัมน์ 'ระยะห่างระหว่างแต่ละจุด (กม.)' ระบบจึงประเมินระยะทางแบบเส้นตรง (ซึ่งอาจน้อยกว่าวิ่งถนนจริง)")
+
             m1, m2, m3, m4 = st.columns(4)
             with m1:
                 st.metric(label="ระยะทางรวม", value=f"{total_distance:.2f} กม.", 
@@ -133,15 +157,16 @@ if uploaded_file is not None:
                 st.metric(label="CO2 ทั้งเที่ยว", value=f"{total_co2:.2f} kg", 
                           delta=f"{delta_co2:.2f} kg" if delta_co2 else None, delta_color="inverse")
             with m4:
-                st.metric(label="เวลาเดินทางรวม", value=f"{hours} ชม. {mins} นาที", 
-                          delta=delta_time_str if delta_time_str else None, delta_color="inverse")
+                st.metric(label="เวลาปฏิบัติงาน (ขับรถ+ลงของ)", value=f"{hours} ชม. {mins} นาที", 
+                          delta=f"ขับรถ {drive_hours} ชม. {drive_mins} น. | ลงของ {service_hours} ชม. {service_mins} น.", 
+                          delta_color="off")
 
-            # --- แสดงตารางเวลา ---
+            # --- ตารางเวลา ---
             st.subheader("⏱️ ตารางประมาณการเวลาจัดส่ง (ETA)")
             schedule_df = pd.DataFrame(schedule_data)
             st.dataframe(schedule_df, use_container_width=True)
 
-            # --- แสดงแผนที่ ---
+            # --- แผนที่ ---
             st.markdown("---")
             st.subheader("📍 แผนที่แสดงจุดจัดส่ง")
             
@@ -177,7 +202,7 @@ if uploaded_file is not None:
                 for i, row in edited_df.iterrows():
                     eta_info = schedule_df.iloc[i]
                     popup_html = f"""
-                    <h4 style='margin-bottom:5px;'>ลำดับ {i+1}: {row['ชื่อสถานที่']}</h4>
+                    <h4 style='margin-bottom:5px;'>ลำดับ {i}: {row['ชื่อสถานที่']}</h4>
                     <hr style='margin:5px 0'>
                     <b>ถึงเวลา:</b> <span style='color:green;'>{eta_info['เวลาไปถึง (ETA)']}</span><br>
                     <b>ออกเวลา:</b> <span style='color:red;'>{eta_info['เวลาเดินทางต่อ']}</span><br><br>
@@ -189,13 +214,13 @@ if uploaded_file is not None:
                     number_icon = folium.DivIcon(html=f"""
                         <div style="background-color:#0078ff; color:white; border-radius:50%; width:30px; height:30px; 
                         display:flex; justify-content:center; align-items:center; font-weight:bold; border:2px solid white; 
-                        box-shadow: 0 0 4px rgba(0,0,0,0.5); font-size:14pt;">{i + 1}</div>
+                        box-shadow: 0 0 4px rgba(0,0,0,0.5); font-size:14pt;">{i}</div>
                     """, icon_anchor=(15, 15))
                     
                     folium.Marker(
                         location=[row['Lat'], row['Lon']],
                         popup=folium.Popup(popup_html, max_width=300),
-                        tooltip=f"ลำดับ {i+1} : {row['ชื่อสถานที่']}", 
+                        tooltip=f"ลำดับ {i} : {row['ชื่อสถานที่']}", 
                         icon=number_icon
                     ).add_to(m)
 
