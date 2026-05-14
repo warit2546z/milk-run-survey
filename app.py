@@ -1,53 +1,74 @@
+
 import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
 
 # ตั้งค่าหน้าเว็บให้กว้างขึ้น
-st.set_page_config(page_title="ข้อมูลการสำรวจ Logistics", layout="wide")
+st.set_page_config(page_title="Logistics Survey Dashboard", layout="wide")
 
-st.title("🗺️ แผนที่และตารางแสดงข้อมูลการสำรวจ")
+st.title("🗺️ ระบบนำเข้าไฟล์ข้อมูลสำรวจและแสดงผลบนแผนที่")
 
-# ข้อมูลการสำรวจของคุณ (คุณสามารถเพิ่มจุดอื่นๆ หรือเปลี่ยนไปใช้ pd.read_excel('ชื่อไฟล์.xlsx') ก็ได้)
-data = {
-    "ชื่อสถานที่": ["สำนักงานฟาร์ม มทส.", "ร้านด็อกเตอร์สโนว์", "รพ มทส"],
-    "ละติจูด": [14.8890708, 14.9014382, 14.8661903],
-    "ลองจิจูด": [102.0006967, 102.0092821, 102.0342216],
-    "Demand 200cc": [320, 0, 130],
-    "Demand 2000cc": [30, 0, 5],
-    "Demand 5000cc": [5, 2, 0]
-}
+# สร้างส่วนสำหรับอัปโหลดไฟล์
+uploaded_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ข้อมูล (รองรับ Excel .xlsx หรือ .csv)", type=["xlsx", "csv"])
 
-# แปลงข้อมูลให้อยู่ในรูปแบบตาราง
-df = pd.DataFrame(data)
+if uploaded_file is not None:
+    try:
+        # ตรวจสอบประเภทไฟล์และอ่านข้อมูล
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+            
+        # ตรวจสอบว่าในไฟล์มีคอลัมน์ที่จำเป็นสำหรับทำแผนที่หรือไม่
+        if 'ชื่อสถานที่' in df.columns and 'ละติจูด' in df.columns and 'ลองจิจูด' in df.columns:
+            
+            # 1. แสดงตารางข้อมูล
+            st.subheader("📋 ตารางแสดงข้อมูลค่าต่างๆ")
+            st.dataframe(df, use_container_width=True)
 
-# 1. แสดงตารางข้อมูล
-st.subheader("📋 ตารางแสดงข้อมูลค่าต่างๆ")
-st.dataframe(df, use_container_width=True)
+            # 2. แสดงแผนที่
+            st.subheader("📍 แผนที่แสดงจุดสำรวจ")
+            
+            # คำนวณหาจุดกึ่งกลางของแผนที่จากพิกัดทั้งหมด
+            center_lat = df['ละติจูด'].mean()
+            center_lon = df['ลองจิจูด'].mean()
+            m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
 
-# 2. แสดงแผนที่
-st.subheader("📍 แผนที่แสดงจุดสำรวจ")
+            # วนลูปเพื่อนำพิกัดและข้อมูลมาปักหมุด
+            for i, row in df.iterrows():
+                
+                # สร้างข้อความ Popup โดยดึงข้อมูลทุกคอลัมน์ที่ไม่ได้ชื่อว่าพิกัดมาแสดงอัตโนมัติ
+                popup_html = f"<h4 style='margin-bottom:5px;'>{row['ชื่อสถานที่']}</h4><hr style='margin:5px 0'>"
+                for col in df.columns:
+                    if col not in ['ชื่อสถานที่', 'ละติจูด', 'ลองจิจูด']:
+                        popup_html += f"<b>{col}:</b> {row[col]}<br>"
+                
+                # ปักหมุดลงบนแผนที่
+                folium.Marker(
+                    location=[row['ละติจูด'], row['ลองจิจูด']],
+                    popup=folium.Popup(popup_html, max_width=300),
+                    tooltip=str(row['ชื่อสถานที่']), # ข้อความเมื่อเอาเมาส์ชี้
+                    icon=folium.Icon(color="blue", icon="info-sign")
+                ).add_to(m)
 
-# สร้างแผนที่ Folium โดยให้จุดศูนย์กลางอยู่ที่จุดแรกของข้อมูล (ฟาร์ม มทส.)
-m = folium.Map(location=[df['ละติจูด'].iloc[0], df['ลองจิจูด'].iloc[0]], zoom_start=13)
+            # แสดงผลแผนที่บนเว็บ
+            st_folium(m, width=1000, height=600)
+            
+        else:
+            st.error("❌ ข้อผิดพลาด: ไฟล์ของคุณต้องมีหัวคอลัมน์ชื่อ 'ชื่อสถานที่', 'ละติจูด' และ 'ลองจิจูด' (พิมพ์ให้ตรงกันเป๊ะๆ)")
+            
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
 
-# วนลูปเพื่อนำพิกัดและข้อมูล Demand มาปักหมุดบนแผนที่
-for i, row in df.iterrows():
-    # ข้อความที่จะแสดงเมื่อกดคลิกที่หมุด
-    popup_text = (
-        f"<b>{row['ชื่อสถานที่']}</b><br>"
-        f"Demand 200cc: {row['Demand 200cc']} ขวด<br>"
-        f"Demand 2L: {row['Demand 2000cc']} ขวด<br>"
-        f"Demand 5L: {row['Demand 5000cc']} ขวด"
-    )
-    
-    # ปักหมุดลงบนแผนที่
-    folium.Marker(
-        location=[row['ละติจูด'], row['ลองจิจูด']],
-        popup=popup_text,
-        tooltip=row['ชื่อสถานที่'], # ข้อความเมื่อเอาเมาส์ชี้
-        icon=folium.Icon(color="blue", icon="info-sign")
-    ).add_to(m)
+else:
+    # ข้อความแสดงเมื่อยังไม่มีการอัปโหลดไฟล์
+    st.info("👆 กรุณาอัปโหลดไฟล์ข้อมูลของคุณด้านบน เพื่อเริ่มต้นการแสดงผล")
+    st.write("**เงื่อนไขของไฟล์ที่นำมาอัปโหลด:** ต้องมีหัวคอลัมน์ (บรรทัดแรกสุด) ที่ใช้คำว่า **ชื่อสถานที่**, **ละติจูด** และ **ลองจิจูด** ส่วนคอลัมน์ข้อมูลอื่นๆ เช่น ปริมาณความต้องการ ระบบจะนำไปแสดงผลให้อัตโนมัติ")
+```eof
 
-# แสดงแผนที่บนหน้าเว็บ Streamlit
-st_folium(m, width=800, height=500)
+**ข้อควรระวังสำคัญ:**
+1. อย่าลืมเพิ่มคำว่า `openpyxl` ลงไปในไฟล์ `requirements.txt` บน GitHub ด้วยนะครับ (มันเป็นตัวที่ทำให้ Python อ่านไฟล์ Excel ได้)
+2. ในไฟล์ Excel ของคุณ บรรทัดบนสุด (Header) **ต้องมี 3 คอลัมน์ที่สะกดคำว่า** `ชื่อสถานที่`, `ละติจูด` และ `ลองจิจูด` ส่วนคอลัมน์อื่นๆ (เช่น Demand หรือ ชื่อลูกค้า) คุณสามารถตั้งชื่ออะไรก็ได้ตามใจชอบเลยครับ
+
+นำ Code ใหม่ไปทับใน GitHub ได้เลย ลองทดสอบดูนะครับ ถ้าเจอ Error หรืออยากให้เพิ่มฟีเจอร์ไหนบอกผมได้ทันที!
